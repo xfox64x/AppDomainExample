@@ -7,16 +7,21 @@ Warning: these are the ramblings of a professional amateur. I probably don't kno
 ## Prologue
 I've been working on a new .NET RAT to both escape security product detection and explore some .NET concepts I've been meaning to check out, in support of my engagements. Meterpreter is too well-known/signatured to work during an engagement, in the presence of an advanced capability (like Crowdstrike). Combining advanced capabilities with AMSI has pretty much ruined PowerShell as a reliable and stealthy vector. The move to .NET was the rage over the last couple years (and well before), resulting in (and probably better described by) [things like SpecterOps' SharpSploit](https://posts.specterops.io/introducing-sharpsploit-a-c-post-exploitation-library-5c7be5f16c51) and [HarmJ0y's](https://github.com/HarmJ0y) [GhostPack](https://github.com/GhostPack). 
 
-These tools provide most of the functionality I like in a RAT and they are familiar, so my goal became figuring out how I could remotely load and execute these capabilities. Well... my goal was really hijacked by a couple of things, as I went along wantonly developing, that I wanted to understand and try:
+These tools provide most of the functionality I would like in a RAT and they are familiar, so my goal became figuring out how I could remotely load and execute these capabilities. Well... my goal was really hijacked by a couple of things, as I went along wantonly developing, that I wanted to understand and try:
 - How do I .NET Reflection? (load and execute the goods)
 - Is there anything I can do to hide my activity from security products? (short-term hide the goods)
 - Can I/How do I unload modules when not in use? (long-term protect the goods)
 
 .NET Reflection is well understood and documented. Loading additional .NET Assemblies from a file or byte-array and calling the methods within is easy. 
 
-Unloading .NET Assemblies after you're done with them? That's a bit more tricky. In general, once a DLL is loaded, it cannot be unloaded without destroying the current application... or what .NET knows as an [AppDomain](https://docs.microsoft.com/en-us/dotnet/api/system.appdomain?redirectedfrom=MSDN&view=netframework-4.7.2). Fortunately for us, we can create more AppDomains within our main AppDomain, which we can load Assemblies into, execute methods from said Assemblies, and then promptly unload the AppDomain and all Assemblies loaded in it. Unfortunately for us (me), doing this creates a whole track and field of Type hurdles and Serialization hoops that we must contort around. AppDomains bless us with many things: protection, obscurity, dynamic execution, delicious spaghetti, and paperclip-string solutions that I probably need to re-think.
+Unloading .NET Assemblies after you're done with them? That's a bit more tricky. In general, once a DLL is loaded, it cannot be unloaded without destroying the current application... or what .NET knows as an [AppDomain](https://docs.microsoft.com/en-us/dotnet/api/system.appdomain?redirectedfrom=MSDN&view=netframework-4.7.2). Fortunately for us, we can create more AppDomains within our main AppDomain, which we can load Assemblies into, execute methods from said Assemblies, and then promptly unload the AppDomain and all Assemblies loaded in it. Unfortunately for us (me), doing this creates a whole track and field of Type hurdles and Serialization hoops that we must contort around. AppDomains bless us with many things: protection, obscurity, boundaries, the ability to unload, and paperclip-string solutions that I probably need to re-think.
 
 Oh, and did I mention my target was .NET 3.5/3.0?
 
 
 -- More to come as I find time --
+
+
+## Hiding from Crowdstrike
+Forgive me pappa Ionescu, for I have sinned (I'm sure he understands this far better than I). This doesn't truly and fully escape anything; we're just taking advantage of how something automated, like Crowdstrike's agent, peeks into applications. Even in the following example, I don't have full confidence that Crowdstrike isn't capable of getting our sketchy payload ([SharpSploit](https://github.com/cobbr/SharpSploit)) or plumbing the depths of the "sandboxed" AppDomain, though it also isn't logging anything suspicious and doesn't seem to be catching new threads or any odd calls (save for opening handles to protected processes from under-protected places). This certainly warrants more of my time, to look into.
+
