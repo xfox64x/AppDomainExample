@@ -1,8 +1,8 @@
 # AppDomainExample
-Using AppDomain's to escape detection and enable dynamic execution.
-This is a work-in-progress - a collection of my thoughts and half-baked ideas when I threw too much time into the thrash.
+A .NET tool that uses AppDomain's to enable dynamic execution and escape detection.
+This is a work-in-progress - a collection of my thoughts and half-baked ideas when I threw too much time into the thrash. I probably don't know what I'm doing, have probably done things in obscure/dumb ways, and may inaccurately describe most things. All criticisms and help welcome.
 
-Warning: these are the ramblings of a professional amateur. I probably don't know what I'm doing, have probably done things in an obscure/dumb way, and may inaccurately describe most things. All criticisms and help welcome.
+-- Will be updated as I find time --
 
 ## Overall Goals
 1. Write something dank to help with demonstrating risk during engagements.
@@ -16,22 +16,21 @@ These tools provide most of the functionality I would like in a RAT and they are
 - How do I .NET Reflection? (load and execute the goods)
 - Is there anything I can do to hide my activity from security products? (short-term hide the goods)
 - Can I/How do I unload modules when not in use? (long-term protect the goods)
+- How do I generalize these capabilities so I can load and call any method from any .NET DLL? (make it a tool)
 
 .NET Reflection is well understood and documented. Loading additional .NET Assemblies from a file or byte-array and calling the methods within is easy. 
 
-Unloading .NET Assemblies after you're done with them? That's a bit more tricky. In general, once a DLL is loaded, it cannot be unloaded without destroying the current application... or what .NET knows as an [AppDomain](https://docs.microsoft.com/en-us/dotnet/api/system.appdomain?redirectedfrom=MSDN&view=netframework-4.7.2). Fortunately for us, we can create more AppDomains within our main AppDomain, which we can load Assemblies into, execute methods from said Assemblies, and then promptly unload the AppDomain and all Assemblies loaded in it. Unfortunately for us (me), doing this creates a whole track and field of Type hurdles and Serialization hoops that we must contort around. AppDomains bless us with many things: protection, obscurity, boundaries, the ability to unload, and paperclip-string solutions that I probably need to re-think.
+Unloading .NET Assemblies after you're done with them? That's a bit more tricky. In general, once a DLL is loaded, it cannot be unloaded without destroying the current application... or what .NET knows as an [AppDomain](https://docs.microsoft.com/en-us/dotnet/api/system.appdomain?redirectedfrom=MSDN&view=netframework-4.7.2). Fortunately for us, we can create more AppDomains within our main AppDomain, which we can load Assemblies into, execute methods from said Assemblies, and then promptly unload the AppDomain and all Assemblies loaded in it. Unfortunately for us, doing this creates a whole track and field of Type hurdles and Serialization hoops that we must contort around. AppDomains bless us with many things: isolation, obscurity, the ability to unload, and paperclip-string solutions that I probably need to re-think. Oh, and did I mention my target was .NET 3.5/3.0?
 
-Oh, and did I mention my target was .NET 3.5/3.0?
+What I'm doing here isn't too dissimilar from [Luke Jennings' Countercept post](https://www.countercept.com/blog/gargoyle-memory-scanning-evasion-for-net/) on a [Gargoyle-like](https://github.com/JLospinoso/gargoyle) solution for memory scanning evasion in .NET. Jennings' article makes for a good read and provides several detection strategies. I really haven't contributed anything more advanced or made progress on beating these detections (add it to the TODO's), but this is where I'm entering the loop.
 
--- Will be updated as I find time --
- 
 ## Hiding from Crowdstrike
 Forgive me pappa Ionescu, for I have sinned (I'm sure he understands this far better than I). This doesn't truly and fully escape anything; we're just taking advantage of how something automated, like Crowdstrike's agent, peeks into applications. Even in the following example, I don't have full confidence that Crowdstrike isn't capable of getting our sketchy payload ([SharpSploit](https://github.com/cobbr/SharpSploit)) or plumbing the depths of the "sandboxed" AppDomain, though it also isn't logging anything suspicious and doesn't seem to be catching new threads or any odd calls (save for opening handles to protected processes from under-protected places). This certainly warrants more of my time, to look into.
 
 To start off this under-explained example (that I will surely enrich in the future), here are the Assemblies loaded in the main AppDomain, before I load something sketchy like SharpSploit:
 ![Main AppDomain Before Loading SharpSploit](https://github.com/xfox64x/AppDomainExample/raw/master/MainAppDomain_BeforeLoading.png)
 
-Nothing out of the ordinary; no Crowdstrike sensor or, at least, not yet. I'm not sure if there's some sort of determined delay, if the sensor Assembly is always loaded, or if the actions of loading another Assembly, sketchy or not, triggers it -- Add it to the TODO list.
+Nothing out of the ordinary; no Crowdstrike sensor or, at least, not yet. I'm not sure if there's some sort of determined delay, if the sensor Assembly is always loaded, if it can even interrogate .NET, or if the actions of loading another Assembly, sketchy or not, triggers it -- Add it to the TODO list.
 
 Anyways, nothing crazy here; just showing that both the SharpSploit and Crowdstrike Assemblies are now loaded:
 ![Main AppDomain After Loading SharpSploit](https://raw.githubusercontent.com/xfox64x/AppDomainExample/master/MainAppDomain_AfterLoading.png)
