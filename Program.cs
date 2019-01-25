@@ -14,7 +14,7 @@ namespace AppDomainExample
 {
     class Program
     {
-        public static byte[] DllBytes = File.ReadAllBytes(@"D:\Scripts\SharpSploit.dll");
+        public static byte[] DllBytes = File.ReadAllBytes(@"C:\Path\To\SharpSploit.dll");
 
         public static Regex GenericTypeRegex = new Regex(@"^(?<name>[\w\+]+(\.[\w|\+]+)*)(\&*)(\**)(`(?<count>\d))?(\[(?<subtypes>.*?)\])(,\s*(?<assembly>[\w\+]+(\.[\w|\+]+)*).*?)?$", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.ExplicitCapture);
 
@@ -36,17 +36,135 @@ namespace AppDomainExample
         
         static void Main()
         {
-            Assembly[] AssembliesBeforeLoad = AppDomain.CurrentDomain.GetAssemblies();
-
-            Assembly SharpSploit = Assembly.Load(DllBytes);
-
-            Assembly[] AssembliesAfterLoad = AppDomain.CurrentDomain.GetAssemblies();
-
-
-            Type AssemblyType = SharpSploit.GetType("SharpSploit.Enumeration.Host", false, true);
+            // Creating a lil break here for those following along with a debugger.
+            Console.WriteLine("Press Return to start.");
+            Console.ReadLine();
             
-            MethodInfo[] MethodInfos = AssemblyType.GetMethods();
+            // The next three commented lines of code can be uncommented, for debugging purposes.
+            // Check loaded Assemblies before loading SharpSploit into the main AppDomain.
+            //Assembly[] AssembliesBeforeLoad = AppDomain.CurrentDomain.GetAssemblies();
+
+            // Load the SharpSploit DLL into the main AppDomain, for funsies.
+            //Assembly SharpSploit = Assembly.Load(DllBytes);
+
+            // Check loaded Assemblies after loading SharpSploit into the main AppDomain.
+            //Assembly[] AssembliesAfterLoad = AppDomain.CurrentDomain.GetAssemblies();
+
+            // When creating a new AppDomain, a friendly name is required, for later reference. 
+            // GUID's are used to avoid any sort of creative thought or telling name.
+            Guid SandboxId = Guid.NewGuid();
             
+            // Create the AppDomain using the above GUID as the friendly name.
+            AppDomain appDomain = GetNewAppDomain(SandboxId);
+            
+            // Use this new AppDomain to get an interface to the AssemblySandbox execution class.
+            IAssemblySandbox assmeblySandbox = GetAssemeblySandbox(appDomain);
+
+            // Place a breakpoint in AssemblySandbox.CheckLoadedAssemblies() and uncomment below to verify the Assembly isn't loaded.
+            //assmeblySandbox.CheckLoadedAssemblies();
+            
+            
+            
+            // ## Demo #1: Loading a DLL into the AssemblySandbox, and calling a method from the Assembly.
+            Console.WriteLine("\r\n-- Demo #1 -------------------------------------------------------------------");
+            // We're going to load the SharpSploit DLL and call the non-static method SharpSploit.Credentials.Tokens.WhoAmI().
+            // This isn't the best way to do this (see Demo #3), but it covers how both static and non-static Methods are called.
+            // It's also a product of me developing something for a specific, arbitrary use-case, and I need to rework how calls
+            // to non-static methods are made.
+
+            // Load SharpSploit into the AssemblySandbox, with name "SharpSploit".
+            Console.WriteLine("[*] Loading the SharpSploit DLL...");
+            assmeblySandbox.Load("SharpSploit", DllBytes);
+
+            // Place a breakpoint in AssemblySandbox.CheckLoadedAssemblies() and uncomment below to now verify the Assembly was loaded.
+            //assmeblySandbox.CheckLoadedAssemblies();
+
+            // Execute the non-static method WhoAmI from the loaded instance of SharpSploit, in the AssemblySandbox.
+            Console.WriteLine("[*] Executing the non-static SharpSploit.Credentials.Tokens.WhoAmI() method from the SharpSploit DLL...");
+            byte[] serializedReturnValueWhoAmI = assmeblySandbox.ExecuteMethod("SharpSploit", "SharpSploit.Credentials.Tokens", "WhoAmI", null, null, null, null);
+
+            // Deserialize the return value. We are assuming the return value is a Type understood in this main AppDomain (i.e. string)
+            var whoAmI = Deserialize(serializedReturnValueWhoAmI);
+
+            // Print deserialized value, and hit return for next demo.
+            Console.WriteLine("[+] WhoAmI Results: \"{0}\"\r\n", whoAmI);
+            Console.WriteLine("Press Return to continue...");
+            Console.ReadLine();
+
+
+
+            // ## Demo #2: Passing commonly-Typed variables to a method in the AssemblySandbox.
+            Console.WriteLine("\r\n-- Demo #2 -------------------------------------------------------------------");
+            // We're going to do a simple, static String.Join() on a string-array, akin to String.Join(",", ["a", "b"]) => "a,b"
+            // It's important to understand that this is only possible because we're passing basic Types and calling Methods that exist,
+            // by default, in both application domains; all Types and Methods referenced can be resolved in each domain, given the
+            // assemblies currently loaded.
+
+            // First, define the types of the specific Method we want to call.
+            List<string> MethodTypes = new List<string>() { "System.String", "System.String[]" };
+
+            // We want to join the strings "a" and "b" with a delimiter of ",".
+            List<object> MethodParameters = new List<object>() { ",", new string[] { "a", "b" } };
+
+            // Call the Method on the parameters, and get the serialized result.
+            Console.WriteLine("[*] Executing \'System.String.Join(\",\", new string[] { \"a\", \"b\" })\' within the AssemblySandbox AppDomain...");
+            byte[] serializedReturnValueJoin = assmeblySandbox.ExecuteMethod(null, "System.String", "Join", null, null, MethodTypes.ToArray(), MethodParameters.ToArray());
+
+            // Deserialize the result into an Object of a Type that we're assuming to be a String.
+            object actualReturnValueJoin = Deserialize(serializedReturnValueJoin);
+
+            Console.WriteLine("[+] Join result: \"{0}\"", actualReturnValueJoin);
+            Console.WriteLine("Press Return to continue...");
+            Console.ReadLine();
+
+
+
+            // ## Demo #3: Storing and referencing variables and return values in the AssemblySandbox.
+            Console.WriteLine("\r\n-- Demo #3 -------------------------------------------------------------------");
+            // We're going to store a Typed value in the AssemblySandbox's variable Dictionary, call a Method on it, and store
+            // the return value in the AssemblySandbox's variable Dictionary. This is probably the correct way to call a method
+            // on an instance of a potentially unknown class (a class that only exists within the AssemblySandbox).
+            // We're creating a string-array, of size 5, and calling SetValue("asdf", 0), setting the first element to "asdf".
+
+            // First, define the variable Types of the string-array constructor we want (new string[5]).
+            List<string> ConstructorTypes = new List<string>() { "System.Int32" };
+
+            // Create a new string-array, of size 5, and store it as a variable named "stringArrayVar" in the AssemblySandbox.
+            // If everything initializes correctly, AssmeblySandbox.ConstructNewObject returns true.
+            Console.WriteLine("[*] Creating a new string[5] and storing it as variable \"stringArrayVar\" inside the AssemblySandbox AppDomain...");
+            bool successfullyCreated = assmeblySandbox.ConstructNewObject("System.String[]", "stringArrayVar", ConstructorTypes.ToArray(), new object[] { 5 });
+
+            // Execute SetValue on our stored string-array "stringArrayVar", setting the object at index 0 to "asdf", and store
+            // the return value as a new variable named "returnVar" (which will be null because SetValue returns void).
+            // AssmeblySandbox.ExecuteMethodOnVariable returns True if the Method successfully executed on the variable.
+            Console.WriteLine("[*] Executing \'returnVar = stringArrayVar.SetValue(\"asdf\", 0)\' within the AssemblySandbox AppDomain...");
+            bool executeMethodWasSuccessful = assmeblySandbox.ExecuteMethodOnVariable("SetValue", "stringArrayVar", "returnVar", new string[] { "System.Object", "System.Int32" }, new object[] { "asdf", 0 });
+
+            // Get and deserialize variable "stringArrayVar", which should become a string-array with the Object at index 0 set to "asdf'.
+            string[] stringArrayReturnValue = (string[])Deserialize(assmeblySandbox.GetVariable("stringArrayVar"));
+            Console.WriteLine("stringArrayReturnValue type: {0}", stringArrayReturnValue.GetType());
+            Console.WriteLine("stringArrayReturnValue[0]:  \"{0}\"\r\n", stringArrayReturnValue[0]);
+
+            // AssmeblySandbox.GetVariableInfo returns a formatted string, displaying info about the stored variables.
+            string variableInfo = assmeblySandbox.GetVariableInfo();
+            Console.WriteLine("Variables Stored in the AssemblySandbox:\r\n========================================");
+            Console.WriteLine(variableInfo);
+            Console.WriteLine();
+            // This is probably how Demo #1 should have been done - creating a new instance of Token, storing it as a variable in
+            // the AssemblySandbox, and calling the WhoAmI Method on the variable.
+
+            
+
+            // We're donezo. Unload the AppDomain that the AssemblySandbox was using.
+            Console.WriteLine("Press Return to unload the AssemblySandbox's AppDomain...");
+            Console.ReadLine();
+
+            AppDomain.Unload(appDomain);
+
+            // Place a breakpoint in AssemblySandbox.CheckLoadedAssemblies() and uncomment below to verify everything is gone.
+            //assmeblySandbox.CheckLoadedAssemblies();
+
+            Console.WriteLine("All done. Press Return to exit...");
             Console.ReadLine();
         }
         
@@ -747,7 +865,7 @@ namespace AppDomainExample
             // Serialize the return value to prevent the proxy/appdomain from attempting to serialize/deserialize types it doesn't understand.
             try
             {
-                Variables[returnVariableName] = new VariableTuple(targetVariableName, MethodInfoObject.ReturnType, MethodInfoObject.Invoke(Variables[targetVariableName].Instance, zippedMethodParameters.Select(x => x.Instance).ToArray()));
+                Variables[returnVariableName] = new VariableTuple(returnVariableName, MethodInfoObject.ReturnType, MethodInfoObject.Invoke(Variables[targetVariableName].Instance, zippedMethodParameters.Select(x => x.Instance).ToArray()));
                 return true;
             }
             catch
@@ -921,6 +1039,13 @@ namespace AppDomainExample
             {
                 return ReconstructType(string.Format("{0}, {1}", typeName, assemblyName), false);
             }
+        }
+
+        // Check loaded Assemblies in this AppDomain; for debugging purposes.
+        public void CheckLoadedAssemblies()
+        {
+            Assembly[] Assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            return;
         }
 
         /// <summary>
