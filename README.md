@@ -80,4 +80,10 @@ exit
 Slight modifications could be made to run a list of commands from a file (like a script).
 
 
+## TODO
+* Compile to DLL.
+* Test injecting compiled DLL.
+* Add command line help/autocomplete
+* Create a smaller AppDomain stager for this larger environment.
+
 A lot of things still need cleaning. Not everything serves a purpose. The thought-process is still: you don't do much of anything in a PowerShell prompt that isn't strings-into-interpreter and strings-out-terminal; everything else is complicated data and data accessories.
